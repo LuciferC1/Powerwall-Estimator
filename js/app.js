@@ -32,6 +32,9 @@ let currentChartType = 'production';
 let roiData = [];
 let quoteRecordedForCurrentSearch = false;
 
+let confirmationMap = null;
+let confirmationMarker = null;
+
 // Number Animation Utility
 function animateValue(obj, start, end, duration, isFloat = false) {
     let startTimestamp = null;
@@ -68,6 +71,8 @@ function updateDashboardStats() {
 }
 
 function recordQuote(systemCost, kwp, annualSavings) {
+    if (quoteRecordedForCurrentSearch) return; // Only record once per unique search
+    
     const stats = JSON.parse(localStorage.getItem('pwp_stats') || '{"quotes":0,"pipeline":0,"totalKwp":0,"totalSavings":0}');
     stats.quotes++;
     stats.pipeline += systemCost;
@@ -75,6 +80,7 @@ function recordQuote(systemCost, kwp, annualSavings) {
     stats.totalSavings += annualSavings;
     localStorage.setItem('pwp_stats', JSON.stringify(stats));
     updateDashboardStats();
+    quoteRecordedForCurrentSearch = true;
 }
 
 // Configurator UI Logic
@@ -131,9 +137,58 @@ function initAutocomplete() {
         const lng = place.geometry.location.lng();
         const address = place.formatted_address;
 
-        fetchSolarData(lat, lng, address);
+        showConfirmationMap(lat, lng, address);
     });
 }
+
+function showConfirmationMap(lat, lng, address) {
+    dashboard.classList.add('hidden-section');
+    const confirmSection = document.getElementById('confirm-location');
+    confirmSection.classList.remove('hidden-section');
+    confirmSection.classList.add('slide-in');
+
+    const mapOptions = {
+        center: { lat, lng },
+        zoom: 20,
+        mapTypeId: 'satellite',
+        tilt: 0, // 0 for accurate overhead placement, but we can enable 45 for 'cool' factor
+        heading: 0,
+        disableDefaultUI: false,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false
+    };
+
+    confirmationMap = new google.maps.Map(document.getElementById('confirmation-map'), mapOptions);
+
+    confirmationMarker = new google.maps.Marker({
+        position: { lat, lng },
+        map: confirmationMap,
+        draggable: true,
+        animation: google.maps.Animation.DROP,
+        icon: {
+            path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+            scale: 5,
+            fillColor: "#E31937",
+            fillOpacity: 1,
+            strokeWeight: 2,
+            strokeColor: "#FFFFFF",
+        },
+        title: "Drag to center of roof"
+    });
+
+    const confirmBtn = document.getElementById('confirm-analyze-btn');
+    confirmBtn.onclick = () => {
+        const pos = confirmationMarker.getPosition();
+        fetchSolarData(pos.lat(), pos.lng(), address);
+        confirmSection.classList.add('hidden-section');
+    };
+}
+
+document.getElementById('cancel-confirm-btn')?.addEventListener('click', () => {
+    document.getElementById('confirm-location').classList.add('hidden-section');
+    dashboard.classList.remove('hidden-section');
+});
 
 function toggleSkeletons(show) {
     const elements = document.querySelectorAll('.card-container');
@@ -409,11 +464,14 @@ function calculateFinancials() {
     animateValue(document.getElementById('save-solar'), 0, Math.round(solarSavings), 1000, false);
     animateValue(document.getElementById('save-pw'), 0, Math.round(pwSavings), 1000, false);
 
-    // FIX #4: Derive payback from the ROI curve break-even year (more accurate than cost/savings)
     let payback = systemCost / (pwSavings || 1); // simple fallback
     const breakEvenIdx = roiData.findIndex(v => v >= 0);
     if (breakEvenIdx !== -1) payback = breakEvenIdx + 1;
     animateValue(document.getElementById('payback'), 0, payback, 1000, true);
+
+    // Store the system cost for the recordQuote call later
+    currentData.lastCalculatedCost = systemCost;
+    currentData.lastCalculatedSavings = pwSavings;
 
     // FIX #7: Use style.display so it co-exists correctly with sm:hidden
     const mobileCostEl = document.getElementById('mobile-cost');
@@ -468,11 +526,7 @@ function calculateFinancials() {
         }
     }
 
-    // FIX #6: Record first calculation for a new address to localStorage dashboard stats
-    if (!quoteRecordedForCurrentSearch) {
-        recordQuote(systemCost, currentData.kwp, pwSavings);
-        quoteRecordedForCurrentSearch = true;
-    }
+    // Note: recordQuote is now called via buttons to ensure lead quality
 }
 
 gridRateInput.addEventListener('input', calculateFinancials);
@@ -695,6 +749,9 @@ function renderChart(dataArr) {
 // Copy Summary
 document.getElementById('copy-btn').addEventListener('click', async () => {
     if (!currentData) return;
+    
+    // Record lead when user takes action
+    recordQuote(currentData.lastCalculatedCost, currentData.kwp, currentData.lastCalculatedSavings);
     const battText = `${pw3Count}x Powerwall 3` + (expCount > 0 ? ` + ${expCount}x Expansion` : '') + (hasGateway ? ' (with Gateway)' : ' (no Gateway)');
     const totalCap = ((pw3Count + expCount) * 13.5).toFixed(1);
 
@@ -717,6 +774,9 @@ document.getElementById('copy-btn').addEventListener('click', async () => {
 // PDF Generation — Premium 3-Page Design
 document.getElementById('pdf-btn').addEventListener('click', async () => {
     if (!currentData) return;
+    
+    // Record lead when user takes action
+    recordQuote(currentData.lastCalculatedCost, currentData.kwp, currentData.lastCalculatedSavings);
     const btn = document.getElementById('pdf-btn');
     const orig = btn.textContent;
     btn.textContent = 'Generating...';
@@ -954,9 +1014,15 @@ function drawPanelsOnRoof(count) {
     const centerPoint = project(centerLat, centerLng);
     
     // 3. Draw Panels
-    ctx.fillStyle = 'rgba(20, 60, 150, 0.75)'; 
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.lineWidth = 1;
+    // --- Premium Aesthetics ---
+    // Deep Solar Blue Gradient
+    const panelGradient = ctx.createLinearGradient(-5, -5, 5, 5);
+    panelGradient.addColorStop(0, '#1a365d'); // Deep Blue
+    panelGradient.addColorStop(0.5, '#2c5282'); // Lighter Blue
+    panelGradient.addColorStop(1, '#1a365d');
+    
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 0.5;
     
     const panelsToDraw = currentData.panelsList.slice(0, count);
     
@@ -972,18 +1038,40 @@ function drawPanelsOnRoof(count) {
         ctx.translate(px, py);
         ctx.rotate((azimuth * Math.PI) / 180);
         
-        const pWidth = 11;
-        const pHeight = 7;
+        const pWidth = 11.5; // Slightly larger for visual impact
+        const pHeight = 7.5;
         
-        ctx.shadowColor = 'rgba(0,0,0,0.5)';
-        ctx.shadowBlur = 2;
+        // --- 1. Outer Glow/Shadow for depth ---
+        ctx.shadowColor = 'rgba(0,0,0,0.6)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetY = 1;
+        
+        // --- 2. Main Panel Body ---
+        ctx.fillStyle = panelGradient;
         
         if (panel.orientation === 'LANDSCAPE') {
             ctx.fillRect(-pWidth/2, -pHeight/2, pWidth, pHeight);
             ctx.strokeRect(-pWidth/2, -pHeight/2, pWidth, pHeight);
+            
+            // --- 3. Glossy Reflection Overlay ---
+            const gloss = ctx.createLinearGradient(-pWidth/2, -pHeight/2, pWidth/2, pHeight/2);
+            gloss.addColorStop(0, 'rgba(255,255,255,0.15)');
+            gloss.addColorStop(0.4, 'rgba(255,255,255,0)');
+            gloss.addColorStop(1, 'rgba(255,255,255,0.05)');
+            ctx.fillStyle = gloss;
+            ctx.fillRect(-pWidth/2, -pHeight/2, pWidth, pHeight);
+            
         } else {
             ctx.fillRect(-pHeight/2, -pWidth/2, pHeight, pWidth);
             ctx.strokeRect(-pHeight/2, -pWidth/2, pHeight, pWidth);
+            
+            // Glossy Reflection for Portrait
+            const gloss = ctx.createLinearGradient(-pHeight/2, -pWidth/2, pHeight/2, pWidth/2);
+            gloss.addColorStop(0, 'rgba(255,255,255,0.15)');
+            gloss.addColorStop(0.4, 'rgba(255,255,255,0)');
+            gloss.addColorStop(1, 'rgba(255,255,255,0.05)');
+            ctx.fillStyle = gloss;
+            ctx.fillRect(-pHeight/2, -pWidth/2, pHeight, pWidth);
         }
         
         ctx.restore();
