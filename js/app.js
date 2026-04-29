@@ -409,7 +409,29 @@ function calculateFinancials() {
     }
     const highlightTitle = document.getElementById('highlight-title');
     if (highlightTitle) {
-        highlightTitle.textContent = `${pw3Count}x Powerwall 3` + (expCount > 0 ? ` & ${expCount}x Exp` : '') + ` Included`;
+        highlightTitle.textContent = `${pw3Count}x Powerwall 3 Included`;
+    }
+
+    // Update Expansion Highlight Card
+    const expHighlightCard = document.getElementById('exp-highlight-card');
+    const expHighlightCount = document.getElementById('exp-highlight-count');
+    if (expHighlightCard) {
+        if (expCount > 0) {
+            expHighlightCard.classList.remove('hidden');
+            if (expHighlightCount) expHighlightCount.textContent = expCount;
+        } else {
+            expHighlightCard.classList.add('hidden');
+        }
+    }
+
+    // Update Gateway Highlight Card
+    const gatewayHighlightCard = document.getElementById('gateway-highlight-card');
+    if (gatewayHighlightCard) {
+        if (hasGateway) {
+            gatewayHighlightCard.classList.remove('hidden');
+        } else {
+            gatewayHighlightCard.classList.add('hidden');
+        }
     }
 
     // Update Rebate Badge
@@ -713,6 +735,12 @@ document.getElementById('pdf-btn').addEventListener('click', async () => {
         const expText = expCount > 0 ? ` + ${expCount}x Expansion` : '';
         const totalCap = ((pw3Count + expCount) * 13.5).toFixed(1);
         document.getElementById('pdf-spec-battery').textContent = `${pw3Text}${expText} (${totalCap} kWh)`;
+
+        const pdfGatewayRow = document.getElementById('pdf-gateway-row');
+        if (pdfGatewayRow) {
+            if (hasGateway) pdfGatewayRow.classList.remove('hidden');
+            else pdfGatewayRow.classList.add('hidden');
+        }
 
         document.getElementById('pdf-footer-installer-2').textContent = installerContact;
 
