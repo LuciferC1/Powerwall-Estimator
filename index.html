@@ -175,12 +175,10 @@
                     <!-- Satellite View -->
                     <div
                         class="bg-white/5 backdrop-blur-md border border-white/10 shadow-xl rounded-xl p-2 h-48 sm:h-56 relative overflow-hidden group transition-all duration-300 hover:-translate-y-1 hover:shadow-tesla-red/10 card-container">
-                        <!-- Use crossorigin="anonymous" to prevent canvas taint issues during PDF generation -->
-                        <img id="satellite-img"
-                            src="https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?auto=format&fit=crop&q=80&w=800&h=400"
-                            alt="Satellite view of property"
-                            class="w-full h-full object-cover rounded-lg group-hover:scale-105 transition-transform duration-700"
-                            crossorigin="anonymous">
+                        <div id="satellite-container" class="w-full h-full relative rounded-lg overflow-hidden">
+                            <canvas id="satellite-canvas" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"></canvas>
+                            <img id="satellite-img" class="hidden" crossorigin="anonymous">
+                        </div>
                         <div
                             class="absolute bottom-4 left-4 bg-black/60 backdrop-blur px-3 py-1 rounded text-xs text-white border border-white/10 flex items-center gap-2">
                             <div class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>

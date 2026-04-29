@@ -193,7 +193,22 @@ async function fetchSolarData(lat, lng, address) {
             const monthWeights = [0.033, 0.050, 0.080, 0.105, 0.130, 0.140, 0.135, 0.115, 0.085, 0.055, 0.035, 0.037];
             const production = monthWeights.map(w => Math.round(totalKwh * w));
 
-            data = { ...data, panels, kwp, roofArea, totalKwh, production, baseTotalKwh: totalKwh, baseProduction: production, basePanels: panels };
+            const segments = solarData.solarPotential.roofSegmentStats;
+            const panelsList = maxConfig.solarPanels;
+
+            data = { 
+                ...data, 
+                panels, 
+                kwp, 
+                roofArea, 
+                totalKwh, 
+                production, 
+                baseTotalKwh: totalKwh, 
+                baseProduction: production, 
+                basePanels: panels,
+                panelsList: panelsList,
+                segments: segments
+            };
         } else {
             console.log("Google Solar API failed or not enabled. Falling back to mock data.");
             // Fallback generator
@@ -268,15 +283,20 @@ function populateResults(data) {
         if (sliderMax) sliderMax.textContent = `Max (${data.panels})`;
     }
 
-    // Set Satellite Image using Static Maps
+    // Set Satellite Image using Canvas for Overlay
+    const satCanvas = document.getElementById('satellite-canvas');
     const satImg = document.getElementById('satellite-img');
-    // FIX #8: Handle API failure gracefully - show fallback and update badge
+    
+    satImg.onload = () => {
+        drawPanelsOnRoof(data.panels);
+    };
+
     satImg.onerror = () => {
         satImg.src = 'https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?auto=format&fit=crop&q=80&w=800&h=400';
         satImg.onerror = null;
-        const badge = satImg.closest('.relative')?.querySelector('.bg-black\/60');
-        if (badge) badge.innerHTML = '<div class="w-2 h-2 rounded-full bg-yellow-400"></div>&nbsp;Aerial View (Approx.)';
     };
+    
+    // Zoom 20 is standard for solar analysis
     satImg.src = `https://maps.googleapis.com/maps/api/staticmap?center=${data.lat},${data.lng}&zoom=20&size=600x300&maptype=satellite&key=${GOOGLE_MAPS_API_KEY}`;
 
     if (currentChartType === 'production') {
@@ -527,6 +547,9 @@ function updateGenerationMetrics() {
 
     calculateFinancials();
     if (currentChartType === 'production') renderChart(currentData.production);
+    
+    // REDRAW PANELS ON ROOF
+    drawPanelsOnRoof(newPanels);
 }
 
 document.getElementById('panel-wattage')?.addEventListener('change', updateGenerationMetrics);
@@ -538,7 +561,8 @@ if (panelSlider) {
         if (currentData) {
             const newPanels = parseInt(panelSlider.value);
             document.getElementById('res-panels').textContent = newPanels;
-            currentData.panels = newPanels; // visually update panel count before full recalc on change
+            currentData.panels = newPanels; 
+            drawPanelsOnRoof(newPanels); // Instant feedback while sliding
         }
     });
     panelSlider.addEventListener('change', updateGenerationMetrics);
@@ -724,10 +748,12 @@ document.getElementById('pdf-btn').addEventListener('click', async () => {
         const paybackEl = document.getElementById('payback');
         document.getElementById('pdf-stat-payback').textContent = paybackEl ? paybackEl.textContent : "0";
 
-        // Handle satellite image via crossOrigin proxy to avoid canvas taint
-        const originalSatImg = document.getElementById('satellite-img');
+        // Handle satellite image via canvas transfer to ensure panels are included in PDF
+        const originalSatCanvas = document.getElementById('satellite-canvas');
         const pdfSatImg = document.getElementById('pdf-sat-img');
-        pdfSatImg.src = originalSatImg.src;
+        if (originalSatCanvas) {
+            pdfSatImg.src = originalSatCanvas.toDataURL('image/png');
+        }
 
         document.getElementById('pdf-footer-installer-1').textContent = installerContact;
 
@@ -890,6 +916,79 @@ document.getElementById('pdf-btn').addEventListener('click', async () => {
         btn.textContent = orig;
     }
 });
+
+// --- Solar Panel Overlay Logic ---
+function drawPanelsOnRoof(count) {
+    const canvas = document.getElementById('satellite-canvas');
+    const img = document.getElementById('satellite-img');
+    if (!canvas || !img) return;
+
+    const ctx = canvas.getContext('2d');
+    const w = 600;
+    const h = 300;
+    
+    canvas.width = w;
+    canvas.height = h;
+    
+    // 1. Draw Satellite Image
+    ctx.drawImage(img, 0, 0, w, h);
+    
+    // If we don't have real panel data (mocking), don't draw overlays
+    if (!currentData || !currentData.panelsList) return;
+
+    // 2. Setup Projection Constants
+    const zoom = 20;
+    const centerLat = currentData.lat;
+    const centerLng = currentData.lng;
+    
+    const project = (lat, lng) => {
+        let siny = Math.sin((lat * Math.PI) / 180);
+        siny = Math.min(Math.max(siny, -0.9999), 0.9999);
+        return {
+            x: 256 * (0.5 + lng / 360),
+            y: 256 * (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)),
+        };
+    };
+    
+    const scale = Math.pow(2, zoom);
+    const centerPoint = project(centerLat, centerLng);
+    
+    // 3. Draw Panels
+    ctx.fillStyle = 'rgba(20, 60, 150, 0.75)'; 
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 1;
+    
+    const panelsToDraw = currentData.panelsList.slice(0, count);
+    
+    panelsToDraw.forEach(panel => {
+        const point = project(panel.center.latitude, panel.center.longitude);
+        const px = w / 2 + (point.x - centerPoint.x) * scale;
+        const py = h / 2 + (point.y - centerPoint.y) * scale;
+        
+        const segment = currentData.segments[panel.segmentId];
+        const azimuth = segment ? segment.azimuth : 0;
+        
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate((azimuth * Math.PI) / 180);
+        
+        const pWidth = 11;
+        const pHeight = 7;
+        
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = 2;
+        
+        if (panel.orientation === 'LANDSCAPE') {
+            ctx.fillRect(-pWidth/2, -pHeight/2, pWidth, pHeight);
+            ctx.strokeRect(-pWidth/2, -pHeight/2, pWidth, pHeight);
+        } else {
+            ctx.fillRect(-pHeight/2, -pWidth/2, pHeight, pWidth);
+            ctx.strokeRect(-pHeight/2, -pWidth/2, pHeight, pWidth);
+        }
+        
+        ctx.restore();
+    });
+}
 
 // Initialize App
 window.onload = loadGoogleMapsAPI;
