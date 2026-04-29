@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Powerwall Pro Estimator</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        tesla: {
+                            black: '#0F0F0F',
+                            red: '#E31937',
+                            gray: '#393c41',
+                            lightgray: '#f4f4f4'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- jsPDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- html2canvas for jsPDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body class="font-sans antialiased min-h-screen flex flex-col relative z-0">
+    <!-- Ambient Background Glow -->
+    <div
+        class="fixed inset-0 z-[-1] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-tesla-red/10 via-tesla-black to-tesla-black pointer-events-none">
+    </div>
+
+    <!-- Navigation -->
+    <nav class="border-b border-tesla-gray/50 bg-tesla-black/90 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-3">
+                    <svg class="w-8 h-8 text-tesla-red" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                    </svg>
+                    <span class="font-bold text-xl tracking-tight">Powerwall Pro</span>
+                </div>
+                <div class="flex items-center gap-4 text-sm text-gray-300">
+                    <span class="hidden sm:inline">Welcome back, Installer</span>
+                    <button class="hover:text-white transition-colors">Logout</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- Dashboard / Search Section -->
+        <section id="dashboard" class="max-w-3xl mx-auto mt-12 text-center">
+            <h1 class="text-4xl sm:text-5xl font-bold mb-6 tracking-tight">Ready to quote your next Powerwall + Solar
+                job?</h1>
+            <p class="text-gray-400 mb-10 text-lg">Start typing a UK address to instantly generate a comprehensive solar
+                & storage estimate.</p>
+
+            <div class="relative max-w-xl mx-auto group">
+                <div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+                <!-- Changed to address-input -->
+                <input type="text" id="address-input" required placeholder="Start typing a UK address..."
+                    class="w-full bg-tesla-gray/30 border border-tesla-gray/50 text-white rounded-lg pl-12 pr-12 py-4 focus:ring-2 focus:ring-tesla-red focus:border-transparent outline-none transition-all text-lg placeholder:normal-case">
+
+                <div id="loading-spinner-container" class="absolute right-4 top-0 bottom-0 flex items-center hidden">
+                    <svg class="w-6 h-6 text-tesla-red animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
+                        </circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z">
+                        </path>
+                    </svg>
+                </div>
+            </div>
+
+            <div class="mt-16 grid grid-cols-2 md:grid-cols-4 gap-4 border-t border-tesla-gray/30 pt-8">
+                <div class="p-4">
+                    <div class="text-3xl font-bold text-white" id="stat-quotes">0</div>
+                    <div class="text-sm text-gray-400 mt-1">Quotes generated</div>
+                </div>
+                <div class="p-4">
+                    <div class="text-3xl font-bold text-white" id="stat-pipeline">£0</div>
+                    <div class="text-sm text-gray-400 mt-1">Pipeline Value</div>
+                </div>
+                <div class="p-4">
+                    <div class="text-3xl font-bold text-white" id="stat-avg-size">0 kWp</div>
+                    <div class="text-sm text-gray-400 mt-1">Avg. System Size</div>
+                </div>
+                <div class="p-4">
+                    <div class="text-3xl font-bold text-white" id="stat-avg-savings">£0</div>
+                    <div class="text-sm text-gray-400 mt-1">Avg. Annual Savings</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section id="results" class="hidden-section mt-8 pb-16">
+            <div class="flex justify-between items-center mb-8">
+                <button id="back-btn" class="text-gray-400 hover:text-white flex items-center gap-2 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                    </svg>
+                    New Search
+                </button>
+                <div class="flex gap-3">
+                    <button id="copy-btn"
+                        class="px-4 py-2 bg-tesla-gray/50 hover:bg-tesla-gray text-white text-sm font-medium rounded transition-colors border border-tesla-gray">
+                        Copy Summary
+                    </button>
+                    <button id="pdf-btn"
+                        class="px-4 py-2 bg-white hover:bg-gray-200 text-black text-sm font-medium rounded transition-colors">
+                        Download PDF
+                    </button>
+                </div>
+            </div>
+
+            <!-- Dashboard Grid -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6" id="report-content">
+
+                <!-- Left Column -->
+                <div class="lg:col-span-1 flex flex-col gap-6">
+
+                    <!-- Client Details -->
+                    <div
+                        class="bg-white/5 backdrop-blur-md border border-white/10 shadow-xl rounded-xl p-5 card-container">
+                        <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Client Details
+                        </h3>
+                        <div class="space-y-3 mb-6">
+                            <div>
+                                <input type="text" id="customer-name" placeholder="Customer Name (e.g. John Doe)"
+                                    class="w-full bg-tesla-gray/30 border border-tesla-gray/50 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-tesla-red outline-none">
+                            </div>
+                            <div>
+                                <input type="email" id="customer-email" placeholder="Email Address (Optional)"
+                                    class="w-full bg-tesla-gray/30 border border-tesla-gray/50 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-tesla-red outline-none">
+                            </div>
+                        </div>
+                        
+                        <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 mt-4 border-t border-white/10 pt-4">Installer Details</h3>
+                        <div class="space-y-3">
+                            <div>
+                                <input type="text" id="installer-name" placeholder="Company Name"
+                                    class="w-full bg-tesla-gray/30 border border-tesla-gray/50 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-tesla-red outline-none">
+                            </div>
+                            <div>
+                                <input type="text" id="installer-phone" placeholder="Contact Number"
+                                    class="w-full bg-tesla-gray/30 border border-tesla-gray/50 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-tesla-red outline-none">
+                            </div>
+                            <div>
+                                <input type="email" id="installer-email" placeholder="Email Address"
+                                    class="w-full bg-tesla-gray/30 border border-tesla-gray/50 text-white rounded px-3 py-2 text-sm focus:ring-1 focus:ring-tesla-red outline-none">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Satellite View -->
+                    <div
+                        class="bg-white/5 backdrop-blur-md border border-white/10 shadow-xl rounded-xl p-2 h-48 sm:h-56 relative overflow-hidden group transition-all duration-300 hover:-translate-y-1 hover:shadow-tesla-red/10 card-container">
+                        <!-- Use crossorigin="anonymous" to prevent canvas taint issues during PDF generation -->
+                        <img id="satellite-img"
+                            src="https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?auto=format&fit=crop&q=80&w=800&h=400"
+                            alt="Satellite view of property"
+                            class="w-full h-full object-cover rounded-lg group-hover:scale-105 transition-transform duration-700"
+                            crossorigin="anonymous">
+                        <div
+                            class="absolute bottom-4 left-4 bg-black/60 backdrop-blur px-3 py-1 rounded text-xs text-white border border-white/10 flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+                            Live Satellite View
+                        </div>
+                    </div>
+
+                    <!-- Property Overview -->
+                    <div
+                        class="bg-white/5 backdrop-blur-md border border-white/10 shadow-xl rounded-xl p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-tesla-red/10 card-container">
+                        <h3 class="text-lg font-semibold mb-4 text-gray-200 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-tesla-red" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6">
+                                </path>
+                            </svg>
+                            Property Overview
+                        </h3>
+                        <div class="space-y-4">
+                            <div>
+                                <div class="text-sm text-gray-400">Address</div>
+                                <div class="font-medium text-lg leading-tight" id="res-address">Loading...</div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <div class="text-sm text-gray-400">Type</div>
+                                    <div class="font-medium" id="res-type">Residential</div>
+                                </div>
+                                <div>
+                                    <div class="text-sm text-gray-400">Coordinates</div>
+                                    <div class="font-medium text-xs mt-1" id="res-coords">...</div>
+                                </div>
+                                <div>
+                                    <div class="text-sm text-gray-400">Max Array Area</div>
+                                    <div class="font-medium" id="res-roof">Loading...</div>
+                                </div>
+                                <div>
+                                    <div class="text-sm text-gray-400">Data Source</div>
+                                    <div class="font-medium text-green-400">Google Solar</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Solar Potential -->
+                    <div
+                        class="bg-white/5 backdrop-blur-md border border-white/10 shadow-xl rounded-xl p-6 relative overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-tesla-red/10 card-container">
+                        <div class="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+                            <svg class="w-24 h-24" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold mb-4 text-gray-200" id="config-title">System Configuration</h3>
+                        <div class="space-y-6">
+                            <div class="flex justify-between items-end">
+                                <div>
+                                    <div class="text-sm text-gray-400 mb-1">Max Solar Size</div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="text-3xl font-bold text-white"><span id="res-kwp">0</span> <span
+                                                class="text-xl text-gray-400 font-normal">kWp</span></div>
+                                        <select id="panel-wattage"
+                                            class="bg-tesla-black border border-white/10 rounded px-2 py-1 text-white focus:border-tesla-red outline-none text-sm cursor-pointer ml-2">
+                                            <option value="400">400W</option>
+                                            <option value="460">460W AIKO</option>
+                                            <option value="475">475W AIKO</option>
+                                            <option value="485">485W AIKO</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-sm text-gray-400 mb-1">Panels</div>
+                                    <div class="text-xl font-bold text-white" id="res-panels">0</div>
+                                </div>
+                            </div>
+
+                            <div class="mt-2">
+                                <input type="range" id="panel-slider" min="4" max="20" value="20"
+                                    class="w-full h-2 bg-tesla-gray rounded-lg appearance-none cursor-pointer">
+                                <div class="flex justify-between text-xs text-gray-500 mt-2">
+                                    <span>Min (4)</span>
+                                    <span id="slider-max-label">Max (20)</span>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 pt-4 border-t border-white/10">
+                                <label class="block text-xs text-gray-400 mb-1">Roof Orientation / Shading</label>
+                                <select id="roof-orientation"
+                                    class="w-full bg-tesla-black border border-tesla-gray/50 text-white rounded px-2 py-2 text-sm focus:border-tesla-red outline-none">
+                                    <option value="1.0">Optimal (South / Unshaded)</option>
+                                    <option value="0.85">Good (East/West Split)</option>
+                                    <option value="0.70">Sub-optimal (North / Shaded)</option>
+                                </select>
+                            </div>
+
+                            <div class="border-t border-white/10 pt-4 mt-4">
+                                <div class="flex justify-between items-center mb-3">
+                                    <div class="text-sm text-gray-300">Powerwall 3 Units</div>
+                                    <div
+                                        class="flex items-center gap-3 bg-black/50 rounded-lg p-1 border border-white/5">
+                                        <button id="pw3-minus"
+                                            class="w-8 h-8 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors flex items-center justify-center">-</button>
+                                        <span id="pw3-count" class="w-4 text-center font-bold text-white">1</span>
+                                        <button id="pw3-plus"
+                                            class="w-8 h-8 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors flex items-center justify-center">+</button>
+                                    </div>
+                                </div>
+                                <div class="flex justify-between items-center mb-4">
+                                    <div class="text-sm text-gray-300">Expansion Packs</div>
+                                    <div
+                                        class="flex items-center gap-3 bg-black/50 rounded-lg p-1 border border-white/5">
+                                        <button id="exp-minus"
+                                            class="w-8 h-8 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors flex items-center justify-center">-</button>
+                                        <span id="exp-count" class="w-4 text-center font-bold text-white">0</span>
+                                        <button id="exp-plus"
+                                            class="w-8 h-8 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors flex items-center justify-center">+</button>
+                                    </div>
+                                </div>
+                                <div class="flex justify-between items-center mb-4">
+                                    <div class="text-sm text-gray-300">Include Backup Gateway</div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" id="gateway-toggle" class="sr-only peer" checked>
+                                        <div
+                                            class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-tesla-red">
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div class="bg-tesla-red/10 border border-tesla-red/20 rounded-lg p-3 text-center">
+                                    <div class="text-xs text-gray-400 uppercase tracking-wider mb-1">Total Storage
+                                        Capacity</div>
+                                    <div class="text-2xl font-bold text-tesla-red"><span id="total-capacity">13.5</span>
+                                        kWh</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Right Column -->
+                <div class="lg:col-span-2 flex flex-col gap-6">
+
+                    <!-- Production & Financials -->
+                    <div
+                        class="bg-white/5 backdrop-blur-md border border-white/10 shadow-xl rounded-xl p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-tesla-red/10 card-container">
+                        <div class="flex justify-between items-start mb-6">
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-200">System Performance</h3>
+                                <div class="text-sm text-gray-400 mt-1">Based on Google Project Sunroof irradiance data
+                                </div>
+                            </div>
+                            <div class="flex bg-tesla-black border border-tesla-gray rounded-lg p-1">
+                                <button id="tab-production"
+                                    class="px-3 py-1 text-sm rounded bg-tesla-gray text-white transition-colors">Generation</button>
+                                <button id="tab-financial"
+                                    class="px-3 py-1 text-sm rounded text-gray-400 hover:text-white transition-colors">25-Yr
+                                    ROI</button>
+                            </div>
+                        </div>
+
+                        <div class="h-64 w-full mb-8">
+                            <canvas id="productionChart"></canvas>
+                        </div>
+
+                        <!-- Energy Profile Settings -->
+                        <div class="border-t border-tesla-gray/40 pt-6 mb-8">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-lg font-semibold text-gray-200">Energy Profile & Tariffs</h3>
+                                <select id="tariff-preset"
+                                    class="bg-tesla-black border border-tesla-gray rounded px-2 py-1 text-white text-sm focus:border-tesla-red outline-none">
+                                    <option value="custom">Custom Tariff</option>
+                                    <option value="standard">Standard Variable</option>
+                                    <option value="octopus_go">Octopus Go</option>
+                                    <option value="octopus_intelligent">Octopus Intelligent</option>
+                                    <option value="ovo_anytime">OVO Charge Anytime</option>
+                                </select>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-1">Base Annual Consumption
+                                        (kWh)</label>
+                                    <input type="number" id="annual-usage" value="4000"
+                                        class="w-full bg-tesla-black border border-tesla-gray rounded px-3 py-2 text-white focus:border-tesla-red outline-none">
+                                </div>
+                                <div class="flex flex-col justify-center">
+                                    <label class="relative inline-flex items-center cursor-pointer mt-5">
+                                        <input type="checkbox" id="off-peak-toggle" class="sr-only peer">
+                                        <div
+                                            class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-tesla-red">
+                                        </div>
+                                        <span class="ml-3 text-sm font-medium text-gray-300">Enable Off-Peak / EV
+                                            Tariff</span>
+                                    </label>
+                                </div>
+                                <div class="col-span-1 md:col-span-2 hidden" id="off-peak-settings">
+                                    <div
+                                        class="flex items-center gap-4 bg-tesla-black/50 p-4 rounded border border-white/5 mt-2">
+                                        <div>
+                                            <label class="block text-xs text-gray-400 mb-1">Off-Peak Rate
+                                                (p/kWh)</label>
+                                            <input type="number" id="off-peak-rate" value="7.50" step="0.01"
+                                                class="w-24 bg-tesla-black border border-tesla-gray rounded px-2 py-1 text-white focus:border-tesla-red outline-none text-sm">
+                                        </div>
+                                        <div class="text-xs text-gray-500 pt-5">
+                                            Battery will charge overnight on this rate during winter to reduce expensive
+                                            daytime grid imports.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="col-span-1 md:col-span-2 flex flex-col sm:flex-row gap-4 mt-2">
+                                    <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                                        <input type="checkbox" id="add-ev"
+                                            class="rounded bg-tesla-black border-tesla-gray text-tesla-red w-4 h-4">
+                                        Plan to add an EV (+3,000 kWh/yr)
+                                    </label>
+                                    <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                                        <input type="checkbox" id="add-hp"
+                                            class="rounded bg-tesla-black border-tesla-gray text-tesla-red w-4 h-4">
+                                        Plan to add a Heat Pump (+4,000 kWh/yr)
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Savings Calculator -->
+                        <div class="border-t border-tesla-gray/40 pt-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-lg font-semibold text-gray-200">Financial Impact</h3>
+                                <div class="flex items-center gap-2 text-sm flex-wrap justify-end">
+                                    <span class="text-gray-400">Buy:</span>
+                                    <input type="number" id="grid-rate" value="24.67" step="0.01"
+                                        class="w-20 bg-tesla-black border border-tesla-gray rounded px-2 py-1 text-right text-white focus:border-tesla-red outline-none">
+                                    <span class="text-gray-400">p</span>
+                                    <span class="text-gray-400 ml-2">Sell:</span>
+                                    <input type="number" id="sell-rate" value="5.00" step="0.01"
+                                        class="w-16 bg-tesla-black border border-tesla-gray rounded px-2 py-1 text-right text-white focus:border-tesla-red outline-none">
+                                    <span class="text-gray-400">p</span>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div
+                                    class="bg-tesla-black/50 border border-white/5 rounded-lg p-4 opacity-75 transition-all hover:opacity-100 hover:border-white/10">
+                                    <div class="text-sm text-gray-400 mb-2">Solar Only</div>
+                                    <div class="text-2xl font-bold text-white mb-1">£<span id="save-solar">0</span>
+                                    </div>
+                                    <div class="text-xs text-gray-500">Est. annual savings</div>
+                                </div>
+                                <div
+                                    class="bg-tesla-gray/20 border border-tesla-red/30 rounded-lg p-4 relative overflow-hidden shadow-[0_0_15px_rgba(227,25,55,0.1)] transition-all hover:shadow-[0_0_20px_rgba(227,25,55,0.2)]">
+                                    <div class="absolute top-0 left-0 w-1 h-full bg-tesla-red"></div>
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <div class="text-sm text-gray-300 mb-2 font-medium" id="financial-title">
+                                                Solar + Powerwall 3</div>
+                                            <div class="text-3xl font-bold text-green-400 mb-1">£<span
+                                                    id="save-pw">0</span></div>
+                                            <div class="text-xs text-gray-400">Est. annual savings • ~<span
+                                                    id="payback">0</span> yr payback</div>
+                                        </div>
+                                        <div id="rebate-badge"
+                                            class="hidden bg-green-500/20 border border-green-500/30 text-green-400 text-[10px] uppercase font-bold px-2 py-1 rounded ml-2 text-right">
+                                            Includes £<span id="rebate-amount">0</span><br>Rebate
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Powerwall 3 Highlights -->
+                    <div
+                        class="bg-gradient-to-r from-tesla-gray/20 to-tesla-black/80 backdrop-blur-md border border-white/10 shadow-xl rounded-xl p-6 flex flex-col sm:flex-row items-center gap-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-tesla-red/10 card-container">
+                        <div class="flex-grow">
+                            <h3 class="text-xl font-bold text-white mb-2" id="highlight-title">Powerwall 3 Included</h3>
+                            <p class="text-sm text-gray-400 mb-4">Fully integrated solar and battery system for maximum
+                                efficiency and backup protection.</p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 text-sm text-gray-300">
+                                <div class="flex items-start gap-2">
+                                    <svg class="w-4 h-4 text-tesla-red shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span>13.5 kWh Energy Capacity</span>
+                                </div>
+                                <div class="flex items-start gap-2">
+                                    <svg class="w-4 h-4 text-tesla-red shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span>Up to 11.04 kW Continuous Power</span>
+                                </div>
+                                <div class="flex items-start gap-2">
+                                    <svg class="w-4 h-4 text-tesla-red shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span>Integrated Inverter (20kW DC / 3 MPPTs)</span>
+                                </div>
+                                <div class="flex items-start gap-2">
+                                    <svg class="w-4 h-4 text-tesla-red shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span>Whole-Home Backup Protection</span>
+                                </div>
+                                <div class="flex items-start gap-2">
+                                    <svg class="w-4 h-4 text-tesla-red shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span>LFP Battery Chemistry (Longer Life)</span>
+                                </div>
+                                <div class="flex items-start gap-2">
+                                    <svg class="w-4 h-4 text-tesla-red shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span>10-Year Comprehensive Warranty</span>
+                                </div>
+                                <div class="flex items-start gap-2">
+                                    <svg class="w-4 h-4 text-tesla-red shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span>Tesla App Real-Time Monitoring</span>
+                                </div>
+                                <div class="flex items-start gap-2">
+                                    <svg class="w-4 h-4 text-tesla-red shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <span>Extreme Weather Ready (-20°C to 50°C)</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="w-32 h-32 flex items-center justify-center shrink-0">
+                            <img src="Photos/power-everything-desktop.avif" alt="Powerwall 3"
+                                class="w-full h-full object-contain drop-shadow-2xl">
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-tesla-gray/30 mt-auto py-6 pb-24 sm:pb-6">
+        <div class="max-w-7xl mx-auto px-4 text-center text-sm text-gray-500">
+            &copy; 2026 Powerwall Pro Estimator. For Tesla Certified Installers.
+        </div>
+    </footer>
+
+    <!-- Mobile Sticky Action Bar -->
+    <div class="sm:hidden fixed bottom-0 left-0 w-full bg-tesla-black border-t border-tesla-gray/50 p-4 z-50 flex justify-between items-center"
+        id="mobile-sticky-bar" style="display:none">
+        <div>
+            <div class="text-xs text-gray-400">Total System</div>
+            <div class="text-lg font-bold text-white">£<span id="mobile-cost">0</span></div>
+        </div>
+        <button id="mobile-copy-btn"
+            class="px-4 py-2 bg-tesla-red hover:bg-red-600 text-white text-sm font-medium rounded transition-colors">
+            Copy Quote
+        </button>
+    </div>
+
+    <!-- Hidden PDF Template -->
+    <div id="pdf-export-container" class="absolute top-[-9999px] left-[-9999px] w-[800px] bg-white z-[-50] font-sans">
+        <!-- PAGE 1: COVER -->
+        <div id="pdf-page-1" class="w-[800px] h-[1125px] bg-[#f9fafb] relative flex flex-col box-border">
+            <!-- Dark Header Band -->
+            <div class="w-full bg-[#0F0F0F] text-white p-12 pb-16 relative">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h1 class="text-4xl font-bold tracking-tight mb-2">Powerwall Pro</h1>
+                        <p class="text-xl text-gray-400" id="pdf-installer-name">Installer Partner</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-gray-400 font-medium text-lg" id="pdf-date">Date</p>
+                        <p class="text-gray-500 mt-1" id="pdf-quote-ref">Ref: PPE-2026-0001</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Customer Details -->
+            <div class="px-12 -mt-8 relative z-10">
+                <div class="bg-white rounded-xl shadow-lg p-8 border border-gray-100 flex justify-between items-center">
+                    <div>
+                        <p class="text-sm text-gray-500 uppercase tracking-wide font-semibold mb-1">Prepared For</p>
+                        <h2 class="text-3xl font-bold text-gray-900 mb-2" id="pdf-customer-name">Customer Name</h2>
+                        <p class="text-lg text-gray-600" id="pdf-customer-address">Address</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Hero Stats -->
+            <div class="px-12 mt-10 grid grid-cols-4 gap-4">
+                <div class="bg-white rounded-xl p-6 border-l-4 border-[#E31937] shadow-sm">
+                    <p class="text-sm text-gray-500 font-medium mb-2">System Size</p>
+                    <p class="text-2xl font-bold text-gray-900"><span id="pdf-stat-kwp">0</span> <span class="text-sm font-normal text-gray-500">kWp</span></p>
+                </div>
+                <div class="bg-white rounded-xl p-6 border-l-4 border-[#E31937] shadow-sm">
+                    <p class="text-sm text-gray-500 font-medium mb-2">Est. Generation</p>
+                    <p class="text-2xl font-bold text-gray-900"><span id="pdf-stat-kwh">0</span> <span class="text-sm font-normal text-gray-500">kWh/yr</span></p>
+                </div>
+                <div class="bg-white rounded-xl p-6 border-l-4 border-[#10b981] shadow-sm">
+                    <p class="text-sm text-gray-500 font-medium mb-2">Est. Savings</p>
+                    <p class="text-2xl font-bold text-gray-900">£<span id="pdf-stat-savings">0</span> <span class="text-sm font-normal text-gray-500">/yr</span></p>
+                </div>
+                <div class="bg-white rounded-xl p-6 border-l-4 border-[#3b82f6] shadow-sm">
+                    <p class="text-sm text-gray-500 font-medium mb-2">Payback</p>
+                    <p class="text-2xl font-bold text-gray-900">~<span id="pdf-stat-payback">0</span> <span class="text-sm font-normal text-gray-500">years</span></p>
+                </div>
+            </div>
+
+            <!-- Satellite Image -->
+            <div class="px-12 mt-10 flex-grow">
+                <div class="w-full h-[400px] rounded-xl overflow-hidden shadow-md relative border border-gray-200">
+                    <img id="pdf-sat-img" src="" class="w-full h-full object-cover" crossorigin="anonymous">
+                    <div class="absolute bottom-4 left-4 bg-white/90 backdrop-blur px-4 py-2 rounded-lg text-sm font-medium shadow-sm flex items-center gap-2 text-black">
+                        <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                        Property Aerial View
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="w-full px-12 py-6 border-t border-gray-200 bg-white flex justify-between items-center">
+                <div class="text-sm text-gray-500" id="pdf-footer-installer-1">Installer Contact Info</div>
+                <div class="text-sm font-medium text-gray-400">Page 1 of 3</div>
+            </div>
+        </div>
+
+        <!-- PAGE 2: SYSTEM DETAILS & CHARTS -->
+        <div id="pdf-page-2" class="w-[800px] h-[1125px] bg-[#f9fafb] relative flex flex-col box-border">
+            <div class="w-full bg-[#0F0F0F] text-white px-12 py-8">
+                <h2 class="text-2xl font-bold tracking-tight">System Specification & Performance</h2>
+            </div>
+
+            <div class="px-12 py-8 flex-grow space-y-8">
+                <!-- Spec Table -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-50 border-b border-gray-200">
+                                <th class="py-4 px-6 text-sm font-semibold text-gray-700 w-1/3">Component</th>
+                                <th class="py-4 px-6 text-sm font-semibold text-gray-700">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <tr>
+                                <td class="py-4 px-6 text-sm font-medium text-gray-900">Solar Panels</td>
+                                <td class="py-4 px-6 text-sm text-gray-600" id="pdf-spec-panels">10x 400W Panels (4.0 kWp)</td>
+                            </tr>
+                            <tr>
+                                <td class="py-4 px-6 text-sm font-medium text-gray-900">Battery Storage</td>
+                                <td class="py-4 px-6 text-sm text-gray-600" id="pdf-spec-battery">1x Powerwall 3 (13.5 kWh)</td>
+                            </tr>
+                            <tr>
+                                <td class="py-4 px-6 text-sm font-medium text-gray-900">Inverter</td>
+                                <td class="py-4 px-6 text-sm text-gray-600">Integrated Powerwall 3 Solar Inverter</td>
+                            </tr>
+                            <tr>
+                                <td class="py-4 px-6 text-sm font-medium text-gray-900">Warranty</td>
+                                <td class="py-4 px-6 text-sm text-gray-600">10 Years (Powerwall) / 25 Years (Panels Performance)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Charts -->
+                <div class="grid grid-cols-2 gap-6">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <h3 class="text-lg font-bold text-gray-900 mb-4">Estimated Monthly Generation</h3>
+                        <div class="w-full h-[220px]">
+                            <canvas id="pdf-chart-production" class="w-full h-full"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <h3 class="text-lg font-bold text-gray-900 mb-4">25-Year Cumulative Cash Flow</h3>
+                        <div class="w-full h-[220px]">
+                            <canvas id="pdf-chart-financial" class="w-full h-full"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Assumptions -->
+                <div class="bg-blue-50 border border-blue-100 rounded-xl p-5 mt-auto">
+                    <h4 class="text-sm font-bold text-blue-900 mb-2">Key Assumptions</h4>
+                    <p class="text-xs text-blue-800 leading-relaxed" id="pdf-assumptions">
+                        Calculations based on an assumed electricity rate of £0.24/kWh and an export rate of £0.05/kWh. Inflation is modelled at 2.0% annually. Self-consumption rates are estimated based on your selected energy profile and the presence of a battery storage system.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="w-full px-12 py-6 border-t border-gray-200 bg-white flex justify-between items-center mt-auto">
+                <div class="text-sm text-gray-500" id="pdf-footer-installer-2">Installer Contact Info</div>
+                <div class="text-sm font-medium text-gray-400">Page 2 of 3</div>
+            </div>
+        </div>
+
+        <!-- PAGE 3: COSTS & NEXT STEPS -->
+        <div id="pdf-page-3" class="w-[800px] h-[1125px] bg-[#f9fafb] relative flex flex-col box-border">
+            <div class="w-full bg-[#0F0F0F] text-white px-12 py-8">
+                <h2 class="text-2xl font-bold tracking-tight">Investment Summary & Next Steps</h2>
+            </div>
+
+            <div class="px-12 py-8 flex-grow flex flex-col">
+                <!-- Cost Table -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-50 border-b border-gray-200">
+                                <th class="py-4 px-6 text-sm font-semibold text-gray-700 w-3/4">Item</th>
+                                <th class="py-4 px-6 text-sm font-semibold text-gray-700 text-right">Estimated Cost</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100" id="pdf-cost-body">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                        <tfoot>
+                            <tr class="bg-gray-50 border-t-2 border-gray-300">
+                                <td class="py-5 px-6 text-lg font-bold text-gray-900 text-right">Total Investment</td>
+                                <td class="py-5 px-6 text-lg font-bold text-gray-900 text-right" id="pdf-cost-total">£0</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <!-- Rebate Note -->
+                <div id="pdf-rebate-box" class="bg-green-50 border border-green-200 rounded-xl p-5 mb-8 hidden">
+                    <div class="flex items-start gap-3">
+                        <svg class="w-6 h-6 text-green-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <div>
+                            <h4 class="text-sm font-bold text-green-900 mb-1">Tesla Next Million Programme Eligibility</h4>
+                            <p class="text-sm text-green-800" id="pdf-rebate-text">Tesla's Next Million programme may entitle you to a rebate of up to £375 directly from Tesla — separate from this quote.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Next Steps Checklist -->
+                <div class="mb-8">
+                    <h3 class="text-xl font-bold text-gray-900 mb-6">Your Path to Energy Independence</h3>
+                    <div class="space-y-4">
+                        <div class="flex gap-4 items-start">
+                            <div class="w-8 h-8 rounded-full bg-[#E31937] text-white flex items-center justify-center font-bold shrink-0">1</div>
+                            <div>
+                                <h4 class="font-bold text-gray-900">Site Survey & Technical Design</h4>
+                                <p class="text-sm text-gray-600 mt-1">Our engineers visit your property to verify roof measurements, electrical connections, and finalize the system design.</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-4 items-start">
+                            <div class="w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center font-bold shrink-0">2</div>
+                            <div>
+                                <h4 class="font-bold text-gray-900">DNO Application</h4>
+                                <p class="text-sm text-gray-600 mt-1">We apply to your District Network Operator for permission to connect your new system to the grid.</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-4 items-start">
+                            <div class="w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center font-bold shrink-0">3</div>
+                            <div>
+                                <h4 class="font-bold text-gray-900">Installation & Commissioning</h4>
+                                <p class="text-sm text-gray-600 mt-1">Our certified team installs your panels and Powerwall, typically within 1-2 days, and registers your system.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CTA & Disclaimer -->
+                <div class="mt-auto">
+                    <p class="text-xs text-gray-500 mb-4">
+                        <strong>Disclaimer:</strong> This document is an estimate based on remote data. Final design, panel count, and costs are subject to a physical site survey and structural assessment. Validity: 30 days from the date of issue.
+                    </p>
+                    <div class="bg-[#0F0F0F] rounded-xl p-6 text-center">
+                        <p class="text-white font-medium mb-1">Ready to secure your installation date?</p>
+                        <p class="text-gray-400 text-sm" id="pdf-cta-contact">Contact us today to arrange your site survey.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="w-full px-12 py-6 border-t border-gray-200 bg-white flex justify-between items-center mt-auto">
+                <div class="text-sm text-gray-500" id="pdf-footer-installer-3">Installer Contact Info</div>
+                <div class="text-sm font-medium text-gray-400">Page 3 of 3</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+
+</body>
+
+</html>
