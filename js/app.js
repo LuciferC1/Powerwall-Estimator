@@ -416,21 +416,24 @@ function calculateFinancials() {
     const expHighlightCard = document.getElementById('exp-highlight-card');
     const expHighlightCount = document.getElementById('exp-highlight-count');
     if (expHighlightCard) {
-        if (expCount > 0) {
-            expHighlightCard.classList.remove('hidden');
-            if (expHighlightCount) expHighlightCount.textContent = expCount;
-        } else {
-            expHighlightCard.classList.add('hidden');
+        // We keep the card visible to fill space as requested
+        const titleEl = expHighlightCard.querySelector('h3');
+        if (titleEl) {
+            titleEl.textContent = expCount > 0 
+                ? `${expCount}x Powerwall DCX Expansion Included` 
+                : `Powerwall DCX Expansion Available`;
         }
     }
 
     // Update Gateway Highlight Card
     const gatewayHighlightCard = document.getElementById('gateway-highlight-card');
     if (gatewayHighlightCard) {
-        if (hasGateway) {
-            gatewayHighlightCard.classList.remove('hidden');
-        } else {
-            gatewayHighlightCard.classList.add('hidden');
+        // We keep the card visible to fill space as requested
+        const titleEl = gatewayHighlightCard.querySelector('h3');
+        if (titleEl) {
+            titleEl.textContent = hasGateway 
+                ? `Backup Gateway 2 Included` 
+                : `Backup Gateway 2 Available`;
         }
     }
 
